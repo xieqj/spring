@@ -1,5 +1,5 @@
 /**
- *    Copyright 2010-2016 the original author or authors.
+ *    Copyright 2010-2019 the original author or authors.
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@ package org.mybatis.spring.support;
 
 import static org.springframework.util.Assert.notNull;
 
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -31,7 +34,7 @@ import org.springframework.dao.support.DaoSupport;
  * <p>
  * {code Autowired} was removed from setSqlSessionTemplate and setSqlSessionFactory
  * in version 1.2.0.
- * 
+ *
  * @author Putthibong Boonbong
  *
  * @see #setSqlSessionFactory
@@ -40,38 +43,57 @@ import org.springframework.dao.support.DaoSupport;
  */
 public abstract class SqlSessionDaoSupport extends DaoSupport {
 
-  private SqlSession sqlSession;
+	private SqlSessionTemplate sqlSession;
 
-  private boolean externalSqlSession;
+	private ConcurrentHashMap<ExecutorType, SqlSession> sessions=new ConcurrentHashMap<ExecutorType, SqlSession>();
 
-  public void setSqlSessionFactory(SqlSessionFactory sqlSessionFactory) {
-    if (!this.externalSqlSession) {
-      this.sqlSession = new SqlSessionTemplate(sqlSessionFactory);
-    }
-  }
+	private boolean externalSqlSession;
 
-  public void setSqlSessionTemplate(SqlSessionTemplate sqlSessionTemplate) {
-    this.sqlSession = sqlSessionTemplate;
-    this.externalSqlSession = true;
-  }
+	public void setSqlSessionFactory(SqlSessionFactory sqlSessionFactory) {
+		if (!this.externalSqlSession) {
+			this.sqlSession = new SqlSessionTemplate(sqlSessionFactory);
+		}
+	}
 
-  /**
-   * Users should use this method to get a SqlSession to call its statement methods
-   * This is SqlSession is managed by spring. Users should not commit/rollback/close it
-   * because it will be automatically done.
-   *
-   * @return Spring managed thread safe SqlSession
-   */
-  public SqlSession getSqlSession() {
-    return this.sqlSession;
-  }
+	public void setSqlSessionTemplate(SqlSessionTemplate sqlSessionTemplate) {
+		this.sqlSession = sqlSessionTemplate;
+		this.externalSqlSession = true;
+	}
 
-  /**
-   * {@inheritDoc}
-   */
-  @Override
-  protected void checkDaoConfig() {
-    notNull(this.sqlSession, "Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required");
-  }
+	/**
+	 * Users should use this method to get a SqlSession to call its statement methods
+	 * This is SqlSession is managed by spring. Users should not commit/rollback/close it
+	 * because it will be automatically done.
+	 *
+	 * @return Spring managed thread safe SqlSession
+	 */
+	public SqlSession getSqlSession() {
+		return this.sqlSession;
+	}
+	/**
+	 * 获取指定执行类型的Mybatis会话
+	 * @param executorType
+	 * @return
+	 * @author <a href="mailto:xieqj@sinotn.com">谢启进</a>
+	 * @date 2019年1月24日 上午10:16:38
+	 */
+	public SqlSession getSqlSession(ExecutorType executorType) {
+		if(executorType==null || this.sqlSession.getExecutorType()==executorType){
+			return this.sqlSession;
+		}
+		SqlSession session=this.sessions.get(executorType);
+		if(session==null){
+			session=new SqlSessionTemplate(this.sqlSession.getSqlSessionFactory(), executorType);
+			this.sessions.put(executorType, session);
+		}
+		return session;
+	}
 
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	protected void checkDaoConfig() {
+		notNull(this.sqlSession, "Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required");
+	}
 }
